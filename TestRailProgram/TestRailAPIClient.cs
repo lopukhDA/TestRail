@@ -1,0 +1,96 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Configuration;
+using System.Linq;
+using TestRail;
+using TestRail.Types;
+
+namespace TestRailProgram
+{
+	public class TestRailApiClient
+	{
+		private readonly string _testRailHost = ConfigurationManager.AppSettings.Get("testRailUrl");
+		private static TestRailApiClient _client;
+		private static TestRailClient _apiClient;
+		private readonly string _userName = ConfigurationManager.AppSettings.Get("user");
+		private readonly string _userPassword = ConfigurationManager.AppSettings.Get("password");
+
+		public static TestRailApiClient GetClient()
+		{
+			return _client ??= new TestRailApiClient();
+		}
+
+		private TestRailApiClient()
+		{
+			_apiClient = new TestRailClient(_testRailHost, _userName, _userPassword);
+		}
+
+		public bool AddResult(ulong runId, ulong caseId, ResultStatus resultStatusId)
+		{
+			var response = _apiClient.AddResultForCase(runId, caseId, resultStatusId);
+
+			if (!response.WasSuccessful)
+			{
+				Console.WriteLine($"TestRail: Error occured while reporting results for case {caseId}. Exception: {response.Exception.Message}");
+			}
+
+			return response.WasSuccessful;
+		}
+
+		public void AddCaseToRun(ulong planId, ulong runId, ulong caseId)
+		{
+			try
+			{
+				var plan = _apiClient.GetPlan(planId);
+				var entryId = plan.Entries?.FindLast(x => x.RunList.First().ID == runId)?.ID;
+
+				if (entryId == null)
+				{
+					Console.WriteLine("TestRail: Invalid entryId");
+					return;
+				}
+
+				var tests = _apiClient.GetTests(runId).Where(x => x.CaseID.HasValue).Select(x => x.CaseID.Value).ToList();
+				tests.Add(caseId);
+
+				var response = _apiClient.UpdatePlanEntry(planId, entryId, caseIDs: tests);
+
+				if (!response.WasSuccessful)
+				{
+					Console.WriteLine($"TestRail: Error occured while added case {caseId} to run {runId}. Exception: {response.Exception.Message}");
+				}
+			}
+			catch (Exception e)
+			{
+				Console.WriteLine($"TestRail: error - {e}");
+			}
+		}
+
+
+		public List<Test> GetUntestedCases(ulong planId, ulong runId)
+		{
+			var plan = _apiClient.GetPlan(planId);
+			var entryId = plan.Entries?.FindLast(x => x.RunList.First().ID == runId)?.ID;
+
+			if (entryId == null)
+			{
+				Console.WriteLine("TestRail: Invalid entryId");
+				return null;
+			}
+
+			var tests = _apiClient.GetTests(runId).ToList();
+
+			var untestedCases = new List<Test>();
+
+			foreach (var test in tests)
+			{
+				if (test.Status == ResultStatus.Untested)
+				{
+					untestedCases.Add(test);
+				}
+			}
+
+			return untestedCases;
+		}
+	}
+}
