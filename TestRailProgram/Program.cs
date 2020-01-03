@@ -12,7 +12,7 @@ namespace TestRailProgram
 
 			var client = TestRailApiClient.GetClient();
 
-			var cases = client.GetUntestedCases(planId, runId);
+			var cases = client.GetUntestedCasesAndWriteToFile(runId);
 
 			using var sw = File.CreateText(file);
 			

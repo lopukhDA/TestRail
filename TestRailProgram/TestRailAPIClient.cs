@@ -16,6 +16,7 @@ namespace TestRailProgram
 		private readonly string _userName = ConfigurationManager.AppSettings.Get("user");
 		private readonly string _userPassword = ConfigurationManager.AppSettings.Get("password");
 
+
 		public static TestRailApiClient GetClient()
 		{
 			return _client ??= new TestRailApiClient();
@@ -25,6 +26,20 @@ namespace TestRailProgram
 		{
 			_apiClient = new TestRailClient(_testRailHost, _userName, _userPassword);
 		}
+
+        public string GetEntryId(ulong planId, ulong runId)
+        {
+            var plan = _apiClient.GetPlan(planId);
+            var entryId = plan.Entries?.FindLast(x => x.RunList.First().ID == runId)?.ID;
+
+            if (entryId == null)
+            {
+                Console.WriteLine("TestRail: Invalid entryId");
+                return null;
+            }
+
+			return entryId;
+        }
 
 		public bool AddResult(ulong runId, ulong caseId, ResultStatus resultStatusId)
 		{
@@ -41,15 +56,8 @@ namespace TestRailProgram
 		public void AddCaseToRun(ulong planId, ulong runId, ulong caseId)
 		{
 			try
-			{
-				var plan = _apiClient.GetPlan(planId);
-				var entryId = plan.Entries?.FindLast(x => x.RunList.First().ID == runId)?.ID;
-
-				if (entryId == null)
-				{
-					Console.WriteLine("TestRail: Invalid entryId");
-					return;
-				}
+            {
+                var entryId = GetEntryId(planId, runId);
 
 				var tests = _apiClient.GetTests(runId).Where(x => x.CaseID.HasValue).Select(x => x.CaseID.Value).ToList();
 				tests.Add(caseId);
@@ -68,17 +76,8 @@ namespace TestRailProgram
 		}
 
 
-		public List<Test> GetUntestedCasesAndWriteToFile(ulong planId, ulong runId)
+		public List<Test> GetUntestedCasesAndWriteToFile(ulong runId)
 		{
-			var plan = _apiClient.GetPlan(planId);
-			var entryId = plan.Entries?.FindLast(x => x.RunList.First().ID == runId)?.ID;
-
-			if (entryId == null)
-			{
-				Console.WriteLine("TestRail: Invalid entryId");
-				return null;
-			}
-
 			var tests = _apiClient.GetTests(runId).ToList();
 
 			var untestedCases = new List<Test>();
@@ -98,21 +97,33 @@ namespace TestRailProgram
 		}
 
 
-		public void DeleteCasesFromRun()
+		public void DeleteCasesFromRun(ulong planId, ulong runId)
 		{
+            var entryId = GetEntryId(planId, runId);
 
+            var tests = _apiClient.GetTests(runId).Where(x => x.CaseID.HasValue).Select(x => x.CaseID.Value).ToList();
+
+            var untested = GetUntestedCasesAndWriteToFile(runId);
+
+
+            foreach (var untestedTest in untested)
+            {
+                if (untestedTest.CaseID != null) 
+                    tests.Remove(untestedTest.CaseID.Value);
+            }
+
+            var response = _apiClient.UpdatePlanEntry(planId, entryId, caseIDs: tests);
 		}
 
 		public void WriteTestsToFile(List<ulong> tests)
 		{
 			using var sw = File.CreateText($"EditTests.csv");
-			Case testCase;
 
-			foreach (var test in tests)
-			{
-				testCase = _apiClient.GetCase(test);
-				sw.WriteLine($"{testCase.ID},{testCase.Title.Replace(",", "")},https://webkm-tm.wbs.only.sap/testrail//index.php?/cases/view/{testCase.ID}");
-			}
+            foreach (var test in tests)
+            {
+                var testCase = _apiClient.GetCase(test);
+                sw.WriteLine($"{testCase.ID},{testCase.Title.Replace(",", "")},https://webkm-tm.wbs.only.sap/testrail//index.php?/cases/view/{testCase.ID}");
+            }
 			
 		}
 	}
