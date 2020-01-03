@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.IO;
 using System.Linq;
 using TestRail;
 using TestRail.Types;
@@ -67,7 +68,7 @@ namespace TestRailProgram
 		}
 
 
-		public List<Test> GetUntestedCases(ulong planId, ulong runId)
+		public List<Test> GetUntestedCasesAndWriteToFile(ulong planId, ulong runId)
 		{
 			var plan = _apiClient.GetPlan(planId);
 			var entryId = plan.Entries?.FindLast(x => x.RunList.First().ID == runId)?.ID;
@@ -82,15 +83,37 @@ namespace TestRailProgram
 
 			var untestedCases = new List<Test>();
 
+			using var sw = File.CreateText($"{runId}.txt");
+
 			foreach (var test in tests)
 			{
 				if (test.Status == ResultStatus.Untested)
 				{
 					untestedCases.Add(test);
+					sw.WriteLine($"{test.CaseID}    {test.Title}");
 				}
 			}
 
 			return untestedCases;
+		}
+
+
+		public void DeleteCasesFromRun()
+		{
+
+		}
+
+		public void WriteTestsToFile(List<ulong> tests)
+		{
+			using var sw = File.CreateText($"EditTests.csv");
+			Case testCase;
+
+			foreach (var test in tests)
+			{
+				testCase = _apiClient.GetCase(test);
+				sw.WriteLine($"{testCase.ID},{testCase.Title.Replace(",", "")},https://webkm-tm.wbs.only.sap/testrail//index.php?/cases/view/{testCase.ID}");
+			}
+			
 		}
 	}
 }
