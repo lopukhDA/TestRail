@@ -27,23 +27,30 @@ namespace TestRailProgram
 			_apiClient = new TestRailClient(_testRailHost, _userName, _userPassword);
 		}
 
-        public string GetEntryId(ulong planId, ulong runId)
-        {
-            var plan = _apiClient.GetPlan(planId);
-            var entryId = plan.Entries?.FindLast(x => x.RunList.First().ID == runId)?.ID;
+		public string GetEntryId(ulong planId, ulong runId)
+		{
+			var plan = _apiClient.GetPlan(planId);
+			var entryId = plan.Entries?.FindLast(x => x.RunList.First().ID == runId)?.ID;
 
-            if (entryId == null)
-            {
-                Console.WriteLine("TestRail: Invalid entryId");
-                return null;
-            }
+			if (entryId == null)
+			{
+				Console.WriteLine("TestRail: Invalid entryId");
+				return null;
+			}
 
 			return entryId;
-        }
+		}
 
-		public bool AddResult(ulong runId, ulong caseId, ResultStatus resultStatusId)
+		public List<User> GetUsers()
 		{
-			var response = _apiClient.AddResultForCase(runId, caseId, resultStatusId);
+			var user = _apiClient.GetUsers();
+
+			return user;
+		}
+
+		public bool AddResult(ulong runId, ulong caseId, ResultStatus resultStatusId, ulong? userId = null)
+		{
+			var response = _apiClient.AddResultForCase(runId, caseId, resultStatusId, assignedToID: userId);
 
 			if (!response.WasSuccessful)
 			{
@@ -56,8 +63,8 @@ namespace TestRailProgram
 		public void AddCaseToRun(ulong planId, ulong runId, ulong caseId)
 		{
 			try
-            {
-                var entryId = GetEntryId(planId, runId);
+			{
+				var entryId = GetEntryId(planId, runId);
 
 				var tests = _apiClient.GetTests(runId).Where(x => x.CaseID.HasValue).Select(x => x.CaseID.Value).ToList();
 				tests.Add(caseId);
@@ -76,55 +83,66 @@ namespace TestRailProgram
 		}
 
 
-		public List<Test> GetUntestedCasesAndWriteToFile(ulong runId)
+		public List<Test> GetUntestedCases(ulong runId)
 		{
 			var tests = _apiClient.GetTests(runId).ToList();
 
 			var untestedCases = new List<Test>();
-
-			using var sw = File.CreateText($"{runId}.txt");
 
 			foreach (var test in tests)
 			{
 				if (test.Status == ResultStatus.Untested)
 				{
 					untestedCases.Add(test);
-					sw.WriteLine($"{test.CaseID}    {test.Title}");
 				}
 			}
 
 			return untestedCases;
 		}
 
-
-		public void DeleteCasesFromRun(ulong planId, ulong runId)
+		public void WriteCasesToFile(List<Test> cases, string fileName)
 		{
-            var entryId = GetEntryId(planId, runId);
+			using var sw = File.CreateText(fileName);
 
-            var tests = _apiClient.GetTests(runId).Where(x => x.CaseID.HasValue).Select(x => x.CaseID.Value).ToList();
-
-            var untested = GetUntestedCasesAndWriteToFile(runId);
-
-
-            foreach (var untestedTest in untested)
-            {
-                if (untestedTest.CaseID != null) 
-                    tests.Remove(untestedTest.CaseID.Value);
-            }
-
-            var response = _apiClient.UpdatePlanEntry(planId, entryId, caseIDs: tests);
+			foreach (var test in cases)
+			{
+				sw.WriteLine($"C{test.CaseID}, {test.Title.Replace(",", "")} ,https://webkm-tm.wbs.only.sap/testrail//index.php?/cases/view/{test.ID}");
+			}
 		}
 
 		public void WriteTestsToFile(List<ulong> tests)
 		{
 			using var sw = File.CreateText($"EditTests.csv");
 
-            foreach (var test in tests)
-            {
-                var testCase = _apiClient.GetCase(test);
-                sw.WriteLine($"{testCase.ID},{testCase.Title.Replace(",", "")},https://webkm-tm.wbs.only.sap/testrail//index.php?/cases/view/{testCase.ID}");
-            }
-			
+			foreach (var test in tests)
+			{
+				var testCase = _apiClient.GetCase(test);
+				sw.WriteLine($"C{testCase.ID},{testCase.Title.Replace(",", "")},https://webkm-tm.wbs.only.sap/testrail//index.php?/cases/view/{testCase.ID}");
+			}
+		}
+
+
+		public void DeleteUntestedCasesFromRun(ulong planId, ulong runId)
+		{
+			var entryId = GetEntryId(planId, runId);
+
+			var tests = _apiClient.GetTests(runId).Where(x => x.CaseID.HasValue).Select(x => x.CaseID.Value).ToList();
+
+			var untested = GetUntestedCases(runId);
+
+
+			foreach (var untestedTest in untested)
+			{
+				if (untestedTest.CaseID != null)
+					tests.Remove(untestedTest.CaseID.Value);
+			}
+
+			var response = _apiClient.UpdatePlanEntry(planId, entryId, caseIDs: tests);
+
+			if (!response.WasSuccessful)
+			{
+				Console.WriteLine($"Error update '{planId}' entryId '{entryId}'");
+			}
 		}
 	}
 }
